@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WasteHero — Price Determination Simulator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes slideInLeft {
+      from { opacity: 0; transform: translateX(-14px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes pulseGreen {
+      0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,.4); }
+      50%     { box-shadow: 0 0 0 10px rgba(34,197,94,0); }
+    }
+    @keyframes scanIn {
+      from { opacity: 0; transform: translateX(-8px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes checkPop {
+      0%   { transform: scale(0); opacity: 0; }
+      60%  { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes flashRow {
+      0%,100% { background-color: inherit; }
+      40%     { background-color: rgba(134,239,172,.35); }
+    }
+    @keyframes countUp {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .anim-fade-up    { animation: fadeInUp .32s ease both; }
+    .anim-fade       { animation: fadeIn   .25s ease both; }
+    .anim-slide-left { animation: slideInLeft .28s ease both; }
+    .anim-scan       { animation: scanIn  .26s ease both; }
+    .anim-check      { animation: checkPop .28s ease both; }
+    .anim-flash      { animation: flashRow .7s ease; }
+    .anim-count      { animation: countUp .3s ease both; }
+    .winner-pulse    { animation: pulseGreen 1.6s ease infinite; }
+
+    .d1{animation-delay:.04s} .d2{animation-delay:.09s} .d3{animation-delay:.14s}
+    .d4{animation-delay:.19s} .d5{animation-delay:.24s} .d6{animation-delay:.29s}
+    .d7{animation-delay:.34s} .d8{animation-delay:.39s}
+
+    .no-scrollbar::-webkit-scrollbar { display:none; }
+    .no-scrollbar { -ms-overflow-style:none; scrollbar-width:none; }
+
+    .panel-label {
+      font-size: 10px; font-weight: 700;
+      letter-spacing: .08em; text-transform: uppercase;
+    }
+  </style>
+</head>
+<body class="overflow-hidden" style="height:100dvh;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif">
+<div id="app" class="h-full"></div>
+
+<script>
+// ─────────────────────────────────────────────────────────
+// SEED DATA
+// ─────────────────────────────────────────────────────────
+const SEED = {
+  products: [
+    { id:'p1', name:'Mixed Waste Collection' },
+    { id:'p2', name:'Bio-waste Collection'   },
+  ],
+  rows: [
+    { id:'r1', productId:'p1', customerType:'Private',  zone:'Urban',  serviceResp:'Municipal',    rdCode:'R1',  price:50, unit:'per ton' },
+    { id:'r2', productId:'p1', customerType:'Business', zone:'Urban',  serviceResp:'Municipal',    rdCode:'R1',  price:70, unit:'per ton' },
+    { id:'r3', productId:'p1', customerType:'Any',      zone:'Rural',  serviceResp:'Any',          rdCode:'R1',  price:80, unit:'per ton' },
+    { id:'r4', productId:'p1', customerType:'Private',  zone:'Turku',  serviceResp:'Market-based', rdCode:'R1',  price:45, unit:'per ton' },
+    { id:'r5', productId:'p1', customerType:'Any',      zone:'Any',    serviceResp:'Any',          rdCode:'Any', price:60, unit:'per ton' },
+    { id:'r6', productId:'p2', customerType:'Private',  zone:'Urban',  serviceResp:'Municipal',    rdCode:'R3',  price:45, unit:'per collection' },
+    { id:'r7', productId:'p2', customerType:'Business', zone:'Any',    serviceResp:'Municipal',    rdCode:'R3',  price:65, unit:'per collection' },
+    { id:'r8', productId:'p2', customerType:'Any',      zone:'Any',    serviceResp:'Any',          rdCode:'Any', price:50, unit:'per collection' },
+  ],
+  customers: [
+    { id:'c1', name:'Emma Larsson',   type:'Private',  zone:'Urban',    serviceResp:'Municipal',    address:'14 Maple Street, Helsinki' },
+    { id:'c2', name:'TechCorp Oy',    type:'Business', zone:'Urban',    serviceResp:'Municipal',    address:'5 Innovation Drive, Helsinki' },
+    { id:'c3', name:'Mikko Virtanen', type:'Private',  zone:'Rural',    serviceResp:'Any',          address:'3 Lakeside Road, Tampere' },
+    { id:'c4', name:'GreenBuild Ltd', type:'Business', zone:'Suburban', serviceResp:'Market-based', address:'22 Commerce Park, Espoo' },
+    { id:'c5', name:'Sofia Mäkinen',  type:'Private',  zone:'Turku',    serviceResp:'Market-based', address:'7 Harbor View, Turku' },
+  ],
+  additionalServices: [
+    { id:'as1', name:'Cancellation Trip',    appliesTo:'p1',  affectsPrice:true,  price:15, unit:'per trip',  requiresDriverConfirmation:true,  automatic:false },
+    { id:'as2', name:'Extra Container Wash', appliesTo:'p2',  affectsPrice:true,  price:20, unit:'per wash',  requiresDriverConfirmation:false, automatic:false },
+    { id:'as3', name:'Weighing Fee',          appliesTo:'any', affectsPrice:true,  price:5,  unit:'per event', requiresDriverConfirmation:false, automatic:true  },
+    { id:'as4', name:'Return Visit',          appliesTo:'any', affectsPrice:true,  price:25, unit:'per visit', requiresDriverConfirmation:true,  automatic:false },
+    { id:'as5', name:'Bin Inspection',        appliesTo:'any', affectsPrice:false, price:0,  unit:'',          requiresDriverConfirmation:true,  automatic:false },
+  ],
+};
+
+// ─────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────
+let _eid = 0;
+const S = {
+  products:           SEED.products.map(x=>({...x})),
+  rows:               SEED.rows.map(x=>({...x})),
+  customers:          SEED.customers.map(x=>({...x})),
+  additionalServices: SEED.additionalServices.map(x=>({...x})),
+  events:             [],
+
+  // citizen
+  citizenId:     'c1',
+  cModal:        false,
+  cSubmitted:    false,
+  cSelectedProd: '',
+
+  // driver
+  dPage:    'list',
+  dEventId: null,
+
+  // back office
+  boTab:     'pricelist',
+  editRowId: null,
+  editSvcId: null,
+  addModal:  false,
+  newRow:    {},
+  panel:     null,   // { eventId, step, result, selectedSvcIds }
+};
+
+function set(patch){ Object.assign(S,patch); render(); }
+
+// ─────────────────────────────────────────────────────────
+// ALGORITHMS
+// ─────────────────────────────────────────────────────────
+function runPD(evt, rows){
+  const pool    = rows.filter(r=>r.productId===evt.productId);
+  const evtVals = [evt.customerType, evt.zone, evt.serviceResp];
+  const LABELS  = ['Customer Type','Zone','Service Resp.'];
+
+  const scored = pool.map(row=>{
+    const rowVals = [row.customerType, row.zone, row.serviceResp];
+    let disqualified = false;
+    let score = 0;
+    const attrs = rowVals.map((rv,i)=>{
+      const ev = evtVals[i];
+      // Specific value that does NOT match → disqualify the entire row
+      if(rv !== 'Any' && rv !== ev){
+        disqualified = true;
+        return { label:LABELS[i], rv, ev, match:'disqualified' };
+      }
+      // Specific value that DOES match → exact match, +1
+      if(rv !== 'Any'){
+        score++;
+        return { label:LABELS[i], rv, ev, match:'exact' };
+      }
+      // "Any" wildcard → row stays, but scores 0
+      return { label:LABELS[i], rv, ev, match:'wildcard' };
+    });
+    return { row, score: disqualified ? -1 : score, disqualified, attrs };
+  });
+
+  const eligible = scored.filter(s=>!s.disqualified);
+  const max      = eligible.length ? Math.max(...eligible.map(s=>s.score)) : 0;
+  const tied     = eligible.filter(s=>s.score===max);
+  // Fallback: if somehow nothing is eligible, use last row (should never happen with Any/Any/Any rows)
+  const winner   = tied.length ? tied.reduce((b,c)=>c.row.price<b.row.price?c:b, tied[0]) : scored[scored.length-1];
+  return { scored, eligible, max, tied, winner, hasTie: tied.length>1 };
+}
+
+function getApplicableSvcs(productId){
+  return S.additionalServices.filter(s=>s.appliesTo==='any'||s.appliesTo===productId);
+}
+
+function getAutoSvcIds(productId){
+  return getApplicableSvcs(productId).filter(s=>s.automatic).map(s=>s.id);
+}
+
+function calcFinal(basePrice, selectedSvcIds){
+  const svcs = S.additionalServices.filter(s=>selectedSvcIds.includes(s.id)&&s.affectsPrice);
+  return { base:basePrice, svcs, total:basePrice+svcs.reduce((n,s)=>n+s.price,0) };
+}
+
+function getEstimate(productId){
+  const c = byId(S.customers, S.citizenId);
+  const r = runPD({productId, customerType:c.type, zone:c.zone, serviceResp:c.serviceResp}, S.rows);
+  const autoSvcs = getApplicableSvcs(productId).filter(s=>s.automatic&&s.affectsPrice);
+  return {
+    base: r.winner.row.price,
+    unit: r.winner.row.unit,
+    autoSvcs,
+    total: r.winner.row.price + autoSvcs.reduce((n,s)=>n+s.price,0),
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────
+const byId = (arr,id)=>arr.find(x=>x.id===id);
+const fmt  = p=>'€'+Number(p).toFixed(2);
+
+function badge(status){
+  const m={ 'Pending':'bg-amber-100 text-amber-700','In Progress':'bg-blue-100 text-blue-700','Completed':'bg-green-100 text-green-700' };
+  return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${m[status]||'bg-gray-100 text-gray-600'}">${status}</span>`;
+}
+
+// ─────────────────────────────────────────────────────────
+// ROOT RENDER
+// ─────────────────────────────────────────────────────────
+function render(){
+  document.getElementById('app').innerHTML = layout();
+  wire();
+}
+
+function layout(){
+  return `
+<div class="h-full flex flex-col" style="background:#f1f5f9">
+
+  <!-- ── TOP NAV ─────────────────────────────────────────── -->
+  <nav class="flex-shrink-0 flex items-center px-5 gap-3 z-10" style="height:52px;background:#0d1117;border-bottom:1px solid rgba(255,255,255,.06)">
+    <div class="flex items-center gap-2.5">
+      <div class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style="background:linear-gradient(145deg,#22c55e 0%,#15803d 100%);box-shadow:0 0 0 1px rgba(34,197,94,.25),0 2px 10px rgba(34,197,94,.3)">
+        <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+      </div>
+      <span class="font-bold text-white text-sm tracking-tight">WasteHero</span>
+    </div>
+    <div class="w-px h-4 flex-shrink-0 mx-1" style="background:rgba(255,255,255,.1)"></div>
+    <span class="text-xs font-medium" style="color:rgba(255,255,255,.38)">Price Determination</span>
+    <span class="text-xs font-semibold rounded px-1.5 py-0.5" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.08);letter-spacing:.05em">SIMULATOR</span>
+    <div class="ml-auto flex items-center gap-3">
+      <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.07)">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" style="box-shadow:0 0 5px #4ade80"></span>
+        <span class="text-xs font-medium" style="color:rgba(255,255,255,.45)">${S.events.filter(e=>e.status==='Completed').length} completed</span>
+      </div>
+      <span class="text-xs" style="color:rgba(255,255,255,.22)">${S.events.length} events</span>
+    </div>
+  </nav>
+
+  <!-- ── MAIN BODY ─────────────────────────────────────────── -->
+  <div class="flex-1 flex min-h-0 overflow-hidden">
+
+    <!-- ══ LEFT RAIL ════════════════════════════════════════ -->
+    <div class="flex-shrink-0 flex flex-col" style="width:360px;border-right:1px solid #dde3ea">
+      <div class="flex-1 min-h-0 flex flex-col bg-white overflow-hidden" style="border-bottom:2px solid #e2e8f0">
+        ${citizenPanel()}
+      </div>
+      <div class="flex-1 min-h-0 flex flex-col overflow-hidden" style="background:#18181b">
+        ${driverPanel()}
+      </div>
+    </div>
+
+    <!-- ══ RIGHT: Back Office ════════════════════════════════ -->
+    <div class="flex-1 min-w-0 flex flex-col overflow-hidden" style="background:#f8fafc">
+      ${backOffice()}
+    </div>
+
+  </div>
+
+  <!-- ── OVERLAYS ──────────────────────────────────────────── -->
+  ${S.cModal   ? requestModal() : ''}
+  ${S.addModal ? addRowModal()  : ''}
+  ${S.panel    ? pricePanel()   : ''}
+
+</div>`;
+}
+
+// ─────────────────────────────────────────────────────────
+// CITIZEN PANEL
+// ─────────────────────────────────────────────────────────
+function citizenPanel(){
+  const c = byId(S.customers, S.citizenId);
+  const myEvents = S.events.filter(e=>e.customerId===c.id).slice().reverse().slice(0,3);
+  const initials = c.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+
+  return `
+<div class="flex-shrink-0 px-4 py-3" style="background:linear-gradient(135deg,#15803d 0%,#059669 100%)">
+  <p class="mb-2" style="font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.5)">Citizen Portal</p>
+  <div class="flex items-center gap-3">
+    <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-sm font-bold" style="background:rgba(255,255,255,.18);color:#fff;letter-spacing:.05em">${initials}</div>
+    <div class="flex-1 min-w-0">
+      <p class="font-bold text-white text-sm leading-tight">${c.name}</p>
+      <p class="text-xs mt-0.5 truncate" style="color:rgba(255,255,255,.6);max-width:190px">${c.address}</p>
+    </div>
+    <div class="flex flex-col items-end gap-1 flex-shrink-0">
+      <span class="text-xs font-semibold px-2 py-0.5 rounded-full" style="background:rgba(255,255,255,.2);color:#fff">${c.type}</span>
+      <span class="text-xs font-semibold px-2 py-0.5 rounded-full" style="background:rgba(255,255,255,.12);color:rgba(255,255,255,.8)">${c.zone}</span>
+    </div>
+  </div>
+</div>
+
+<div class="flex-1 overflow-y-auto no-scrollbar px-3 py-3 space-y-2.5">
+
+  <!-- customer switcher -->
+  <div class="rounded-xl px-3 py-2.5" style="background:#f8fafc;border:1px solid #eef2f7">
+    <p class="text-xs font-semibold text-gray-400 mb-2" style="font-size:10px;letter-spacing:.05em;text-transform:uppercase">Simulate as</p>
+    <div class="flex flex-wrap gap-1.5">
+      ${S.customers.map(cu=>`
+      <button data-switch="${cu.id}" class="text-xs px-2.5 py-1 rounded-full font-semibold transition-all"
+        style="${S.citizenId===cu.id?'background:#16a34a;color:#fff;border:1px solid #16a34a':'background:#fff;color:#64748b;border:1px solid #e2e8f0'}">
+        ${cu.name.split(' ')[0]}
+      </button>`).join('')}
+    </div>
+  </div>
+
+  <!-- attributes -->
+  <div class="grid grid-cols-3 gap-1.5">
+    ${[['Zone',c.zone,'#f5f3ff','#6d28d9'],['Type',c.type,'#eff6ff','#1d4ed8'],['Service',c.serviceResp,'#fffbeb','#b45309']].map(([l,v,bg,col])=>`
+    <div class="rounded-xl p-2" style="background:${bg}">
+      <p class="text-xs mb-0.5" style="color:${col};opacity:.6">${l}</p>
+      <p class="text-xs font-bold truncate" style="color:${col}">${v}</p>
+    </div>`).join('')}
+  </div>
+
+  <!-- CTA -->
+  <button data-cta="request"
+    class="w-full flex items-center justify-between px-4 py-2.5 rounded-xl transition-colors"
+    style="background:#16a34a;color:#fff;box-shadow:0 2px 8px rgba(22,163,74,.3)">
+    <div class="flex items-center gap-2">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+      </svg>
+      <span class="text-sm font-semibold">Request Collection</span>
+    </div>
+    <svg class="w-4 h-4 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+    </svg>
+  </button>
+
+  <!-- estimated price -->
+  ${citizenEstimate()}
+
+  <!-- recent events -->
+  ${myEvents.length ? `
+  <div>
+    <p class="text-xs font-semibold text-gray-400 mb-1.5" style="font-size:10px;letter-spacing:.06em;text-transform:uppercase">Recent Requests</p>
+    <div class="space-y-1">
+      ${myEvents.map(e=>`
+      <div class="flex items-center justify-between px-3 py-2 rounded-xl anim-slide-left" style="background:#fff;border:1px solid #eef2f7">
+        <p class="text-xs font-semibold text-gray-700 truncate flex-1 mr-2">${e.productName}</p>
+        ${badge(e.status)}
+      </div>`).join('')}
+    </div>
+  </div>` : ''}
+
+</div>`;
+}
+
+function citizenEstimate(){
+  return `
+<div class="rounded-xl overflow-hidden" style="border:1px solid #e8edf3">
+  <div class="px-3 py-2 flex items-center gap-1.5" style="background:#f8fafc;border-bottom:1px solid #eef2f7">
+    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#94a3b8">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+    </svg>
+    <p class="font-bold text-gray-500" style="font-size:10px;letter-spacing:.08em;text-transform:uppercase">Estimated Price</p>
+  </div>
+  ${S.products.map(p=>{
+    const est = getEstimate(p.id);
+    return `
+  <div class="px-3 py-2.5 bg-white" style="border-bottom:1px solid #f1f5f9">
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex-1 min-w-0">
+        <p class="text-xs font-semibold text-gray-700 truncate">${p.name}</p>
+        ${est.autoSvcs.length ? `
+        <div class="mt-1 space-y-0.5">
+          <p class="text-xs text-gray-400">Base: ${fmt(est.base)} ${est.unit}</p>
+          ${est.autoSvcs.map(s=>`
+          <p class="text-xs flex items-center gap-1" style="color:#ea580c">
+            <span style="color:#fb923c">+</span>${fmt(s.price)} ${s.name}
+            <span class="rounded-full px-1" style="font-size:9px;background:#fff7ed;color:#ea580c;border:1px solid #fed7aa">auto</span>
+          </p>`).join('')}
+        </div>` : `<p class="text-xs text-gray-400 mt-0.5">No automatic services</p>`}
+      </div>
+      <div class="text-right flex-shrink-0">
+        <p class="font-bold text-gray-900 text-sm">${fmt(est.total)}</p>
+        <p class="text-xs text-gray-400">${est.unit}</p>
+      </div>
+    </div>
+  </div>`;}).join('')}
+  <div class="px-3 py-1.5 flex items-center gap-1.5" style="background:#fffbeb">
+    <svg class="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#d97706">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="text-xs italic" style="color:#92400e">Final price may vary based on driver services</p>
+  </div>
+</div>`;
+}
+
+// ─────────────────────────────────────────────────────────
+// DRIVER PANEL
+// ─────────────────────────────────────────────────────────
+function driverPanel(){
+  return `
+<div class="flex-shrink-0 flex items-center justify-between px-4 py-2.5" style="background:#0f0f12;border-bottom:1px solid rgba(255,255,255,.07)">
+  <div class="flex items-center gap-2">
+    ${S.dPage==='detail'?`
+    <button data-dback class="p-0.5 mr-0.5 transition-colors" style="color:rgba(255,255,255,.35)" onmouseover="this.style.color='rgba(255,255,255,.8)'" onmouseout="this.style.color='rgba(255,255,255,.35)'">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+    </button>`:''}
+    <div class="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0" style="background:rgba(34,197,94,.15);border:1px solid rgba(34,197,94,.2)">
+      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:#4ade80">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+      </svg>
+    </div>
+    <span style="font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.35)">Driver App</span>
+  </div>
+  <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full" style="background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.12)">
+    <div class="w-1.5 h-1.5 bg-green-400 rounded-full" style="box-shadow:0 0 4px #4ade80"></div>
+    <span class="text-xs font-medium" style="color:rgba(74,222,128,.8)">Online</span>
+  </div>
+</div>
+<div class="flex-1 overflow-y-auto no-scrollbar">
+  ${S.dPage==='list' ? driverList() : driverDetail()}
+</div>`;
+}
+
+function driverList(){
+  const active = S.events.filter(e=>e.status!=='Completed');
+  const done   = S.events.filter(e=>e.status==='Completed');
+  if(!S.events.length) return `
+  <div class="flex flex-col items-center justify-center h-full text-center px-6 py-8">
+    <div class="w-12 h-12 rounded-2xl flex items-center justify-center mb-3" style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:rgba(255,255,255,.2)">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0"/>
+      </svg>
+    </div>
+    <p class="text-xs font-semibold mb-1" style="color:rgba(255,255,255,.3)">No jobs assigned</p>
+    <p class="text-xs" style="color:rgba(255,255,255,.15)">Submit a request above</p>
+  </div>`;
+  return `
+<div class="px-3 py-3">
+  ${active.length?`
+  <p class="text-xs font-bold mb-2" style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.25)">Active · ${active.length}</p>
+  <div class="space-y-1.5 mb-3">${active.map(e=>driverCard(e)).join('')}</div>`:''}
+  ${done.length?`
+  <p class="text-xs font-bold mb-2" style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.15)">Completed</p>
+  <div class="space-y-1.5 opacity-50">${done.map(e=>driverCard(e)).join('')}</div>`:''}
+</div>`;
+}
+
+function driverCard(e){
+  const selCount = (e.selectedServiceIds||[]).filter(id=>{
+    const s=byId(S.additionalServices,id); return s&&s.affectsPrice;
+  }).length;
+  return `
+<div data-dev="${e.id}" class="rounded-xl px-3 py-2.5 cursor-pointer anim-slide-left transition-all"
+  style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)"
+  onmouseover="this.style.background='rgba(255,255,255,.09)'" onmouseout="this.style.background='rgba(255,255,255,.06)'">
+  <div class="flex items-start justify-between gap-2">
+    <div class="min-w-0 flex-1">
+      <p class="text-xs font-bold truncate" style="color:rgba(255,255,255,.85)">${e.customerName}</p>
+      <p class="text-xs truncate mt-0.5" style="color:rgba(255,255,255,.3)">${e.address}</p>
+    </div>
+    ${badge(e.status)}
+  </div>
+  <div class="mt-2 flex items-center gap-1.5 flex-wrap">
+    <span class="text-xs px-2 py-0.5 rounded-full font-medium" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.45)">${e.productName}</span>
+    ${selCount?`<span class="text-xs px-2 py-0.5 rounded-full font-semibold" style="background:rgba(234,88,12,.15);color:#fb923c;border:1px solid rgba(234,88,12,.2)">+${selCount} svc</span>`:''}
+  </div>
+</div>`;
+}
+
+function driverDetail(){
+  const e = byId(S.events, S.dEventId);
+  if(!e) return '';
+  const selIds   = e.selectedServiceIds  || [];
+  const confIds  = e.confirmedServiceIds || [];
+  const svcs     = getApplicableSvcs(e.productId);
+  const readonly = e.status==='Completed';
+  const final    = calcFinal(e.basePrice||0, selIds);
+
+  return `
+<div class="px-3 py-3 space-y-2.5 anim-fade-up">
+  <!-- info card -->
+  <div class="rounded-xl p-3.5" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.09)">
+    <div class="flex items-start justify-between mb-2.5">
+      <div>
+        <p class="font-bold text-sm" style="color:rgba(255,255,255,.9)">${e.customerName}</p>
+        <p class="text-xs mt-0.5" style="color:rgba(255,255,255,.35)">${e.address}</p>
+      </div>
+      ${badge(e.status)}
+    </div>
+    <div class="grid grid-cols-2 gap-1.5">
+      ${[['Product',e.productName],['Zone',e.zone],['Type',e.customerType],['Service',e.serviceResp]].map(([l,v])=>`
+      <div class="flex items-center gap-2 p-2 rounded-lg" style="background:rgba(255,255,255,.05)">
+        <div>
+          <p class="text-xs" style="color:rgba(255,255,255,.28)">${l}</p>
+          <p class="text-xs font-semibold truncate" style="color:rgba(255,255,255,.7)">${v}</p>
+        </div>
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- action buttons -->
+  ${e.status==='Pending'?`
+  <button data-dstart="${e.id}" class="w-full py-3 rounded-xl font-bold text-sm text-white transition-colors"
+    style="background:#2563eb;box-shadow:0 4px 12px rgba(37,99,235,.3)">Start Collection</button>`:''}
+  ${e.status==='In Progress'?`
+  <button data-dcomplete="${e.id}" class="w-full py-3 rounded-xl font-bold text-sm text-white transition-colors"
+    style="background:#16a34a;box-shadow:0 4px 12px rgba(22,163,74,.3)">✓ Complete Collection</button>`:''}
+  ${e.status==='Completed'?`
+  <div class="p-3 rounded-xl text-center" style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.2)">
+    <p class="font-bold text-sm" style="color:#4ade80">✓ Collection Completed</p>
+    ${e.matchedPrice!=null?`<p class="text-xs mt-0.5 font-semibold" style="color:rgba(74,222,128,.7)">${fmt(e.matchedPrice)} ${e.matchedUnit}</p>`:''}
+  </div>`:''}
+
+  <!-- additional services -->
+  <div class="rounded-xl overflow-hidden" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)">
+    <div class="px-3 py-2 flex items-center justify-between" style="background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.07)">
+      <p class="text-xs font-bold" style="color:rgba(255,255,255,.5)">Additional Services</p>
+      ${selIds.length?`<span class="text-xs px-1.5 py-0.5 rounded-full font-bold" style="background:rgba(234,88,12,.15);color:#fb923c;border:1px solid rgba(234,88,12,.15)">${selIds.length} selected</span>`:''}
+    </div>
+    ${svcs.map(svc=>{
+      const isSelected = selIds.includes(svc.id);
+      const isConfirmed = confIds.includes(svc.id);
+      const needsConfirm = svc.requiresDriverConfirmation && !isConfirmed;
+      const canToggle = !needsConfirm && !readonly;
+      return `
+    <div class="px-3 py-2.5" style="border-bottom:1px solid rgba(255,255,255,.05)">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-1 flex-wrap">
+            <span class="text-xs font-semibold" style="color:rgba(255,255,255,.75)">${svc.name}</span>
+            ${svc.automatic?`<span class="text-xs px-1.5 rounded-full font-bold leading-5" style="background:rgba(59,130,246,.15);color:#93c5fd;border:1px solid rgba(59,130,246,.2)">Auto</span>`:''}
+            ${!svc.affectsPrice?`<span class="text-xs px-1.5 rounded-full leading-5" style="background:rgba(255,255,255,.06);color:rgba(255,255,255,.3)">No cost</span>`:''}
+          </div>
+          ${svc.affectsPrice&&svc.price>0?`<p class="text-xs mt-0.5" style="color:rgba(255,255,255,.3)">+${fmt(svc.price)} ${svc.unit}</p>`:''}
+        </div>
+        ${readonly?`
+        <span class="text-xs font-semibold" style="color:${isSelected?'#4ade80':'rgba(255,255,255,.2)'}">${isSelected?'✓ Added':'—'}</span>`:`
+        <button data-toggle-svc="${svc.id}" ${canToggle?'':'disabled'}
+          class="flex-shrink-0 text-xs px-2.5 py-1 rounded-lg font-bold transition-all"
+          style="${isSelected?'background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.2)':
+            canToggle?'background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.1)':
+                      'background:rgba(255,255,255,.04);color:rgba(255,255,255,.15);cursor:not-allowed'}">
+          ${isSelected?'✓ Added':'+ Add'}
+        </button>`}
+      </div>
+      ${needsConfirm&&!readonly?`
+      <label class="flex items-center gap-1.5 mt-1.5 cursor-pointer select-none">
+        <input type="checkbox" data-confirm-svc="${svc.id}" ${isConfirmed?'checked':''} class="accent-orange-500 w-3 h-3 flex-shrink-0">
+        <span class="text-xs" style="color:rgba(255,255,255,.35)">Confirm this service was needed</span>
+      </label>`:''}
+    </div>`;
+    }).join('')}
+  </div>
+
+</div>`;
+}
+
+// ─────────────────────────────────────────────────────────
+// BACK OFFICE
+// ─────────────────────────────────────────────────────────
+function backOffice(){
+  return `
+<div class="flex-shrink-0 bg-white px-5 pt-4 pb-0" style="border-bottom:1px solid #e8edf3">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <p class="mb-0.5" style="font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#94a3b8">Back Office</p>
+      <h2 class="font-bold text-gray-900 text-base">Price Management</h2>
+    </div>
+    ${S.boTab==='pricelist'?`
+    <button data-addrow class="flex items-center gap-1.5 px-3 py-2 text-white text-xs font-bold rounded-lg transition-colors" style="background:#16a34a">
+      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+      </svg>Add Price Row
+    </button>`:''}
+  </div>
+  <div class="flex gap-0">
+    ${['pricelist','events'].map(tab=>`
+    <button data-botab="${tab}" class="px-4 py-2.5 text-xs font-semibold transition-colors relative"
+      style="${S.boTab===tab?'color:#16a34a;border-bottom:2px solid #16a34a':'color:#94a3b8;border-bottom:2px solid transparent'}">
+      ${tab==='pricelist'?'Price List':'Events'}
+      ${tab==='events'&&S.events.length?`<span class="ml-1.5 px-1.5 py-0.5 rounded-full text-xs font-bold" style="background:#dcfce7;color:#16a34a">${S.events.length}</span>`:''}
+    </button>`).join('')}
+  </div>
+</div>
+<div class="flex-1 overflow-y-auto no-scrollbar p-5">
+  ${S.boTab==='pricelist' ? boPriceList() : boEvents()}
+</div>`;
+}
+
+// ── Price List ───────────────────────────────────────────
+function boPriceList(){
+  const grouped={};
+  S.products.forEach(p=>{ grouped[p.id]=[]; });
+  S.rows.forEach(r=>{ if(grouped[r.productId]) grouped[r.productId].push(r); });
+
+  const theme={
+    p1:{ row:'bg-sky-50',     badge:'bg-sky-200 text-sky-800'        },
+    p2:{ row:'bg-emerald-50', badge:'bg-emerald-200 text-emerald-800' },
+    as:{ row:'bg-orange-50',  badge:'bg-orange-200 text-orange-800'   },
+  };
+
+  const productRows = S.products.map(prod=>{
+    const rows = grouped[prod.id]||[];
+    const t    = theme[prod.id]||theme.p1;
+    return rows.map((row,i)=>{
+      const ed   = S.editRowId===row.id;
+      const last = i===rows.length-1;
+      return `
+<tr class="${t.row} ${last?'border-b-2 border-gray-200':'border-b border-gray-100'} hover:brightness-[.97] transition-all ${ed?'ring-2 ring-inset ring-blue-400':''}">
+  <td class="px-4 py-2.5">
+    ${i===0?`<span class="px-2 py-0.5 rounded-full text-xs font-bold ${t.badge}">${prod.name}</span>`:'<span class="text-gray-300 text-xs pl-1">↳</span>'}
+  </td>
+  ${ed?`
+  <td class="px-3 py-2"><input data-ef="customerType" value="${row.customerType}" class="border border-blue-300 rounded px-2 py-1 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-blue-500"></td>
+  <td class="px-3 py-2"><input data-ef="zone" value="${row.zone}" class="border border-blue-300 rounded px-2 py-1 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-blue-500"></td>
+  <td class="px-3 py-2"><input data-ef="serviceResp" value="${row.serviceResp}" class="border border-blue-300 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-blue-500"></td>
+  <td class="px-3 py-2"><input data-ef="rdCode" value="${row.rdCode}" class="border border-blue-300 rounded px-2 py-1 text-xs w-12 focus:outline-none focus:ring-1 focus:ring-blue-500"></td>
+  <td class="px-3 py-2 text-right"><input data-ef="price" type="number" value="${row.price}" class="border border-blue-300 rounded px-2 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-blue-500"></td>
+  <td class="px-3 py-2"><select data-ef="unit" class="border border-blue-300 rounded px-1 py-1 text-xs focus:outline-none">
+    <option value="per ton" ${row.unit==='per ton'?'selected':''}>per ton</option>
+    <option value="per collection" ${row.unit==='per collection'?'selected':''}>per collection</option>
+  </select></td>
+  <td class="px-4 py-2.5 text-gray-300 text-xs">—</td>
+  <td class="px-4 py-2.5 text-gray-300 text-xs">—</td>
+  <td class="px-3 py-2"><div class="flex gap-1">
+    <button data-saverow="${row.id}" class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">Save</button>
+    <button data-cancelrow class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200">✕</button>
+  </div></td>`:`
+  <td class="px-4 py-2.5 text-gray-700 text-xs">${row.customerType}</td>
+  <td class="px-4 py-2.5 text-gray-700 text-xs">${row.zone}</td>
+  <td class="px-4 py-2.5 text-gray-700 text-xs">${row.serviceResp}</td>
+  <td class="px-4 py-2.5"><span class="font-mono text-xs text-gray-400">${row.rdCode}</span></td>
+  <td class="px-4 py-2.5 text-right font-bold text-gray-900">${fmt(row.price)}</td>
+  <td class="px-4 py-2.5 text-gray-500 text-xs">${row.unit}</td>
+  <td class="px-4 py-2.5 text-gray-300 text-xs">—</td>
+  <td class="px-4 py-2.5 text-gray-300 text-xs">—</td>
+  <td class="px-4 py-2.5">
+    <button data-editrow="${row.id}" class="text-xs text-gray-400 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50 transition-colors">Edit</button>
+  </td>`}
+</tr>`;}).join('');
+  }).join('');
+
+  const svcRows = S.additionalServices.map((svc,i)=>{
+    const ed   = S.editSvcId===svc.id;
+    const last = i===S.additionalServices.length-1;
+    return `
+<tr class="${theme.as.row} ${last?'':'border-b border-gray-100'} hover:brightness-[.97] transition-all ${ed?'ring-2 ring-inset ring-blue-400':''}">
+  <td class="px-4 py-2.5">
+    ${i===0?`<span class="px-2 py-0.5 rounded-full text-xs font-bold ${theme.as.badge}">Additional Services</span>`:'<span class="text-gray-300 text-xs pl-1">↳</span>'}
+  </td>
+  ${ed?`
+  <td colspan="4" class="px-3 py-2"><input data-esf="name" value="${svc.name}" class="border border-blue-300 rounded px-2 py-1 text-xs w-48 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Service name"></td>
+  <td class="px-3 py-2 text-right"><input data-esf="price" type="number" value="${svc.price}" class="border border-blue-300 rounded px-2 py-1 text-xs w-16 text-right focus:outline-none focus:ring-1 focus:ring-blue-500"></td>
+  <td class="px-3 py-2"><input data-esf="unit" value="${svc.unit}" class="border border-blue-300 rounded px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="per trip"></td>
+  <td class="px-3 py-2">
+    <select data-esf="affectsPrice" class="border border-blue-300 rounded px-1 py-1 text-xs focus:outline-none">
+      <option value="true" ${svc.affectsPrice?'selected':''}>Yes</option>
+      <option value="false" ${!svc.affectsPrice?'selected':''}>No</option>
+    </select>
+  </td>
+  <td class="px-3 py-2">
+    <select data-esf="automatic" class="border border-blue-300 rounded px-1 py-1 text-xs focus:outline-none">
+      <option value="false" ${!svc.automatic?'selected':''}>Manual</option>
+      <option value="true" ${svc.automatic?'selected':''}>Auto</option>
+    </select>
+  </td>
+  <td class="px-3 py-2"><div class="flex gap-1">
+    <button data-savesvc="${svc.id}" class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">Save</button>
+    <button data-cancelsvc class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200">✕</button>
+  </div></td>`:`
+  <td class="px-4 py-2.5 text-gray-700 text-xs font-medium" colspan="4">${svc.name}</td>
+  <td class="px-4 py-2.5 text-right font-bold text-gray-900">${svc.affectsPrice&&svc.price>0?fmt(svc.price):'—'}</td>
+  <td class="px-4 py-2.5 text-gray-500 text-xs">${svc.unit||'—'}</td>
+  <td class="px-4 py-2.5">
+    ${svc.affectsPrice
+      ?`<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">Yes</span>`
+      :`<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-400">No</span>`}
+  </td>
+  <td class="px-4 py-2.5">
+    ${svc.automatic
+      ?`<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-600">Auto</span>`
+      :`<span class="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-400">Manual</span>`}
+  </td>
+  <td class="px-4 py-2.5">
+    <button data-editsvc="${svc.id}" class="text-xs text-gray-400 hover:text-blue-600 px-2 py-1 rounded hover:bg-blue-50 transition-colors">Edit</button>
+  </td>`}
+</tr>`;}).join('');
+
+  return `
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
+  <table class="w-full text-sm" style="min-width:780px">
+    <thead>
+      <tr class="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider">
+        <th class="text-left px-4 py-3">Product / Service</th>
+        <th class="text-left px-4 py-3">Customer Type</th>
+        <th class="text-left px-4 py-3">Zone</th>
+        <th class="text-left px-4 py-3">Service Resp.</th>
+        <th class="text-left px-4 py-3">R/D Code</th>
+        <th class="text-right px-4 py-3">Price</th>
+        <th class="text-left px-4 py-3">Unit</th>
+        <th class="text-left px-4 py-3">Affects Price</th>
+        <th class="text-left px-4 py-3">Automatic</th>
+        <th class="px-4 py-3 w-24"></th>
+      </tr>
+    </thead>
+    <tbody>
+      ${productRows}
+      <tr class="border-b-2 border-gray-200"><td colspan="10" class="py-0"></td></tr>
+      ${svcRows}
+    </tbody>
+  </table>
+</div>`;
+}
+
+// ── Events Table ─────────────────────────────────────────
+function boEvents(){
+  if(!S.events.length) return `
+<div class="bg-white rounded-xl border border-gray-200 p-12 text-center">
+  <p class="text-3xl mb-2">📋</p>
+  <p class="text-gray-500 font-semibold text-sm">No events yet</p>
+  <p class="text-gray-400 text-xs mt-1">Submit a request in the Citizen Portal, then complete it in the Driver App.</p>
+</div>`;
+  return `
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
+  <table class="w-full text-sm" style="min-width:820px">
+    <thead>
+      <tr class="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider">
+        <th class="text-left px-4 py-3">Customer</th>
+        <th class="text-left px-4 py-3">Product</th>
+        <th class="text-left px-4 py-3">Status</th>
+        <th class="text-left px-4 py-3">Zone</th>
+        <th class="text-left px-4 py-3">Type</th>
+        <th class="text-left px-4 py-3">Service</th>
+        <th class="text-right px-4 py-3">Final Price</th>
+        <th class="text-left px-4 py-3">Svcs</th>
+        <th class="text-left px-4 py-3">Matched Row</th>
+        <th class="px-4 py-3 w-28"></th>
+      </tr>
+    </thead>
+    <tbody>
+      ${S.events.slice().reverse().map(e=>{
+        const selIds = e.selectedServiceIds||[];
+        const svcCount = selIds.filter(id=>{ const s=byId(S.additionalServices,id); return s&&s.affectsPrice; }).length;
+        return `
+      <tr class="border-b border-gray-50 hover:bg-gray-50/70 transition-colors ${e._flash?'anim-flash':''}">
+        <td class="px-4 py-3 font-semibold text-gray-800 text-xs">${e.customerName}</td>
+        <td class="px-4 py-3 text-gray-600 text-xs">${e.productName}</td>
+        <td class="px-4 py-3">${badge(e.status)}</td>
+        <td class="px-4 py-3 text-gray-600 text-xs">${e.zone}</td>
+        <td class="px-4 py-3 text-gray-600 text-xs">${e.customerType}</td>
+        <td class="px-4 py-3 text-gray-600 text-xs">${e.serviceResp}</td>
+        <td class="px-4 py-3 text-right">
+          ${e.matchedPrice!=null?`
+          <p class="font-bold text-gray-900">${fmt(e.matchedPrice)}</p>
+          ${e.basePrice!=null&&e.basePrice!==e.matchedPrice?`<p class="text-xs text-gray-400">base ${fmt(e.basePrice)}</p>`:''}`:'—'}
+        </td>
+        <td class="px-4 py-3">
+          ${svcCount?`<span class="text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold">+${svcCount}</span>`:'<span class="text-gray-300">—</span>'}
+        </td>
+        <td class="px-4 py-3 text-xs text-gray-400 max-w-[140px] truncate">${e.matchedRowLabel||'—'}</td>
+        <td class="px-4 py-3">
+          ${e.status==='Completed'?`
+          <button data-openpanel="${e.id}"
+            class="text-xs px-3 py-1.5 bg-violet-50 text-violet-700 rounded-lg hover:bg-violet-100 font-bold transition-colors whitespace-nowrap">
+            ▶ Simulate
+          </button>`:'—'}
+        </td>
+      </tr>`; }).join('')}
+    </tbody>
+  </table>
+</div>`;
+}
+
+// ─────────────────────────────────────────────────────────
+// REQUEST MODAL
+// ─────────────────────────────────────────────────────────
+function requestModal(){
+  return `
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 anim-fade">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm anim-fade-up">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+      <h2 class="font-bold text-gray-900 text-sm">Request Waste Collection</h2>
+      <button data-close="modal" class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    ${S.cSubmitted?`
+    <div class="p-8 text-center anim-fade-up">
+      <div class="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+        <svg class="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+        </svg>
+      </div>
+      <h3 class="font-bold text-gray-900 mb-1">Request Submitted!</h3>
+      <p class="text-gray-500 text-sm mb-5">Your collection request has been submitted.</p>
+      <button data-close="modal" class="px-5 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700">Done</button>
+    </div>`:`
+    <div class="p-5">
+      <p class="text-xs text-gray-500 mb-3">Select the type of collection:</p>
+      <div class="space-y-2 mb-4">
+        ${S.products.map(p=>`
+        <label class="flex items-center gap-3 p-3.5 border-2 rounded-xl cursor-pointer transition-all
+          ${S.cSelectedProd===p.id?'border-green-500 bg-green-50':'border-gray-100 hover:border-gray-200'}">
+          <input type="radio" name="prod" value="${p.id}" ${S.cSelectedProd===p.id?'checked':''} class="accent-green-600" data-prod>
+          <div>
+            <p class="font-semibold text-gray-800 text-sm">${p.name}</p>
+            <p class="text-xs text-gray-400">${p.id==='p1'?'General household & business waste':'Organic and food waste'}</p>
+          </div>
+        </label>`).join('')}
+      </div>
+      <button data-submit-req class="w-full py-3 rounded-xl text-sm font-bold transition-colors
+        ${S.cSelectedProd?'bg-green-600 hover:bg-green-700 text-white':'bg-gray-100 text-gray-400 cursor-not-allowed'}"
+        ${S.cSelectedProd?'':'disabled'}>Submit Request</button>
+    </div>`}
+  </div>
+</div>`;
+}
+
+// ─────────────────────────────────────────────────────────
+// ADD ROW MODAL
+// ─────────────────────────────────────────────────────────
+function addRowModal(){
+  const nr=S.newRow;
+  return `
+<div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 anim-fade">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg anim-fade-up">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+      <h2 class="font-bold text-gray-900 text-sm">Add Price Row</h2>
+      <button data-closeadd class="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="p-5 grid grid-cols-2 gap-3">
+      <div class="col-span-2">
+        <label class="text-xs font-semibold text-gray-500 mb-1 block">Product</label>
+        <select data-nf="productId" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+          ${S.products.map(p=>`<option value="${p.id}" ${nr.productId===p.id?'selected':''}>${p.name}</option>`).join('')}
+        </select>
+      </div>
+      ${[['customerType','Customer Type','Private, Business, Any'],['zone','Zone','Urban, Rural, Any'],
+         ['serviceResp','Service Responsibility','Municipal, Market-based, Any'],['rdCode','R/D Code','R1, R3, Any']].map(([f,l,ph])=>`
+      <div>
+        <label class="text-xs font-semibold text-gray-500 mb-1 block">${l}</label>
+        <input data-nf="${f}" value="${nr[f]||'Any'}" placeholder="${ph}"
+          class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+      </div>`).join('')}
+      <div>
+        <label class="text-xs font-semibold text-gray-500 mb-1 block">Price (€)</label>
+        <input data-nf="price" type="number" value="${nr.price||0}"
+          class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-gray-500 mb-1 block">Unit</label>
+        <select data-nf="unit" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+          <option value="per ton" ${nr.unit==='per ton'?'selected':''}>per ton</option>
+          <option value="per collection" ${nr.unit==='per collection'?'selected':''}>per collection</option>
+        </select>
+      </div>
+      <div class="col-span-2 flex justify-end gap-2 pt-1">
+        <button data-closeadd class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+        <button data-confirmaddrow class="px-5 py-2 bg-green-600 text-white text-sm font-bold rounded-xl hover:bg-green-700">Add Row</button>
+      </div>
+    </div>
+  </div>
+</div>`;
+}
+
+// ─────────────────────────────────────────────────────────
+// PRICE DETERMINATION PANEL  (6 steps)
+// ─────────────────────────────────────────────────────────
+function pricePanel(){
+  const { eventId, step, result, selectedSvcIds } = S.panel;
+  const evt  = byId(S.events, eventId);
+  const LABELS = ['','Event Context','Load Price List','Attribute Matching','Winner Selection','Additional Services','Final Result'];
+  const TOTAL  = 6;
+  return `
+<div class="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4 anim-fade">
+  <div class="bg-white w-full sm:rounded-2xl sm:shadow-2xl sm:max-w-2xl flex flex-col anim-fade-up" style="max-height:90vh">
+
+    <div class="flex-shrink-0 px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-violet-100 rounded-xl flex items-center justify-center">
+          <svg class="w-4 h-4 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+          </svg>
+        </div>
+        <div>
+          <p class="font-bold text-gray-900 text-sm">Price Determination</p>
+          <p class="text-xs text-gray-400">Step ${step}/${TOTAL} — ${LABELS[step]}</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5">
+        ${Array.from({length:TOTAL},(_,i)=>i+1).map(s=>`
+        <div class="rounded-full transition-all ${s<step?'bg-green-400 w-2 h-2':s===step?'bg-violet-500 w-2.5 h-2.5':'bg-gray-200 w-2 h-2'}"></div>`).join('')}
+      </div>
+    </div>
+
+    <div class="flex-1 overflow-y-auto no-scrollbar p-5">
+      ${panelStep(step, evt, result, selectedSvcIds)}
+    </div>
+
+    <div class="flex-shrink-0 px-5 py-4 border-t border-gray-100 flex items-center justify-between">
+      <button ${step<=1?'disabled':''} data-panelprev
+        class="px-4 py-2 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed">← Back</button>
+      <div class="flex gap-2">
+        <button data-panelclose class="px-4 py-2 text-sm text-gray-400 hover:text-gray-600">Close</button>
+        ${step<TOTAL
+          ?`<button data-panelnext class="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold rounded-xl">Next →</button>`
+          :`<button data-panelclose class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-xl">Done ✓</button>`}
+      </div>
+    </div>
+
+  </div>
+</div>`;
+}
+
+function panelStep(step, evt, result, selectedSvcIds){
+  const W   = result.winner;
+  const svcs = (selectedSvcIds||[]).map(id=>byId(S.additionalServices,id)).filter(Boolean);
+  const affecting = svcs.filter(s=>s.affectsPrice);
+  const nonAffecting = svcs.filter(s=>!s.affectsPrice);
+  const fin = calcFinal(W.row.price, selectedSvcIds||[]);
+
+  if(step===1) return `
+<div class="anim-fade-up space-y-4">
+  <div class="flex items-center gap-2 mb-3">
+    <span class="w-6 h-6 bg-violet-100 rounded-full flex items-center justify-center text-xs font-bold text-violet-600">1</span>
+    <h3 class="font-bold text-gray-800">Event Context</h3>
+  </div>
+  <p class="text-sm text-gray-500">Determining price for this event…</p>
+  <div class="bg-violet-50 border border-violet-100 rounded-2xl p-5 grid grid-cols-2 gap-4">
+    ${[['Customer',evt.customerName,'font-bold text-gray-900'],['Product',evt.productName,'font-semibold text-gray-800'],
+       ['Customer Type',evt.customerType,'text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full inline-block'],
+       ['Zone',evt.zone,'text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full inline-block'],
+       ['Service Responsibility',evt.serviceResp,'text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-full inline-block']
+    ].map(([l,v,vc])=>`
+    <div><p class="text-xs text-violet-400 mb-1">${l}</p><p class="${vc}">${v}</p></div>`).join('')}
+  </div>
+  <div class="p-4 bg-gray-50 rounded-xl text-xs text-gray-500 leading-relaxed">
+    The algorithm will scan <strong>${result.scored.length} price rows</strong> for <strong>${evt.productName}</strong>,
+    score each by matching 3 attributes, pick the highest-scoring row, then add any applicable additional service surcharges.
+  </div>
+</div>`;
+
+  if(step===2) return `
+<div class="anim-fade-up space-y-3">
+  <div class="flex items-center gap-2 mb-3">
+    <span class="w-6 h-6 bg-violet-100 rounded-full flex items-center justify-center text-xs font-bold text-violet-600">2</span>
+    <h3 class="font-bold text-gray-800">Load Price List</h3>
+  </div>
+  <p class="text-sm text-gray-500">Scanning <strong>${result.scored.length} rows</strong> for ${evt.productName}…</p>
+  <div class="space-y-2">
+    ${result.scored.map((s,i)=>`
+    <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl border border-gray-100 anim-scan d${Math.min(i+1,8)}" style="opacity:0;animation-fill-mode:forwards">
+      <span class="w-5 h-5 bg-violet-100 rounded-full flex items-center justify-center text-xs font-bold text-violet-500 flex-shrink-0">${i+1}</span>
+      <div class="flex-1 grid grid-cols-3 gap-x-3 text-xs">
+        <span><span class="text-gray-400">Type: </span><span class="text-gray-700 font-medium">${s.row.customerType}</span></span>
+        <span><span class="text-gray-400">Zone: </span><span class="text-gray-700 font-medium">${s.row.zone}</span></span>
+        <span><span class="text-gray-400">Resp: </span><span class="text-gray-700 font-medium">${s.row.serviceResp}</span></span>
+      </div>
+      <div class="text-right flex-shrink-0">
+        <span class="font-bold text-gray-900">${fmt(s.row.price)}</span>
+        <span class="text-gray-400 text-xs ml-1">${s.row.unit}</span>
+      </div>
+    </div>`).join('')}
+  </div>
+</div>`;
+
+  if(step===3) return `
+<div class="anim-fade-up space-y-3">
+  <div class="flex items-center gap-2 mb-2">
+    <span class="w-6 h-6 bg-violet-100 rounded-full flex items-center justify-center text-xs font-bold text-violet-600">3</span>
+    <h3 class="font-bold text-gray-800">Attribute Matching</h3>
+  </div>
+  <div class="flex items-center gap-2 mb-1 text-xs text-gray-500 flex-wrap">
+    <span>Event:</span>
+    <span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-semibold">${evt.customerType}</span>
+    <span class="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-semibold">${evt.zone}</span>
+    <span class="bg-green-50 text-green-700 px-2 py-0.5 rounded-full font-semibold">${evt.serviceResp}</span>
+  </div>
+  <!-- legend -->
+  <div class="flex items-center gap-3 text-xs text-gray-500 pb-1">
+    <span class="flex items-center gap-1"><span class="text-green-600 font-bold">✓</span> Exact match <span class="text-green-400 font-bold">(+1)</span></span>
+    <span class="flex items-center gap-1"><span class="text-gray-300 font-bold">·</span> Wildcard (Any) <span class="text-gray-300 font-bold">(+0)</span></span>
+    <span class="flex items-center gap-1"><span class="text-red-500 font-bold">✕</span> Disqualified</span>
+  </div>
+  <div class="space-y-2">
+    ${result.scored.map((s,i)=>{
+      const isWin = s.row.id===W.row.id;
+      const isDQ  = s.disqualified;
+      return `
+    <div class="rounded-xl border p-3.5 anim-scan d${Math.min(i+1,8)}
+      ${isDQ  ? 'bg-red-50/40 border-red-100 opacity-60'
+              : isWin ? 'bg-white border-green-300' : 'bg-white border-gray-200'}"
+      style="opacity:0;animation-fill-mode:forwards">
+      <div class="flex items-center justify-between mb-2.5">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold ${isDQ?'text-red-400':'text-gray-400'}">Row ${i+1}</span>
+          ${isDQ  ? '<span class="text-xs bg-red-100 text-red-500 px-2 py-0.5 rounded-full font-bold">✕ Disqualified</span>' : ''}
+          ${isWin ? '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">Best match</span>' : ''}
+        </div>
+        ${isDQ
+          ? '<span class="text-xs text-red-400 font-semibold italic">Eliminated</span>'
+          : `<span class="font-bold text-gray-900">${s.score}<span class="text-gray-400 font-normal text-xs"> / 3 exact</span></span>`}
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        ${s.attrs.map((a,ai)=>{
+          const bg   = a.match==='exact'?'bg-green-50 border border-green-200':a.match==='wildcard'?'bg-gray-50':'bg-red-50 border border-red-200';
+          const icon = a.match==='exact'?'✓':a.match==='wildcard'?'·':'✕';
+          const iCls = a.match==='exact'?'text-green-600 font-bold':a.match==='wildcard'?'text-gray-300 font-bold':'text-red-500 font-bold';
+          const vCls = a.match==='exact'?'text-green-700 font-semibold':a.match==='wildcard'?'text-gray-400 italic':'text-red-600 font-semibold line-through';
+          const pts  = a.match==='exact'?'<span class="ml-auto text-xs font-bold text-green-400">+1</span>'
+                      :a.match==='wildcard'?'<span class="ml-auto text-xs text-gray-300">+0</span>':'';
+          return `
+        <div class="p-2 rounded-lg ${bg} anim-check d${Math.min(ai+1,8)}" style="opacity:0;animation-fill-mode:forwards">
+          <p class="text-xs text-gray-400 mb-1">${a.label}</p>
+          <div class="flex items-center gap-1">
+            <span class="${iCls} text-sm">${icon}</span>
+            <span class="text-xs ${vCls} truncate">${a.rv}</span>
+            ${pts}
+          </div>
+        </div>`;}).join('')}
+      </div>
+    </div>`}).join('')}
+  </div>
+</div>`;
+
+  if(step===4) return `
+<div class="anim-fade-up space-y-3">
+  <div class="flex items-center gap-2 mb-3">
+    <span class="w-6 h-6 bg-violet-100 rounded-full flex items-center justify-center text-xs font-bold text-violet-600">4</span>
+    <h3 class="font-bold text-gray-800">Winner Selection</h3>
+  </div>
+  ${result.hasTie?`
+  <div class="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
+    ⚖️ <span>Tie between ${result.tied.length} rows — applying <strong>lowest-price tiebreaker</strong></span>
+  </div>`:''}
+  <div class="space-y-2">
+    ${result.scored.map((s,i)=>{
+      const isWin  = s.row.id===W.row.id;
+      const isTied = result.tied.find(t=>t.row.id===s.row.id);
+      const isDQ   = s.disqualified;
+      return `
+    <div class="flex items-center gap-3 p-3 rounded-xl border transition-all
+      ${isDQ   ? 'bg-red-50/20 border-red-100 opacity-30'
+               : isWin   ? 'bg-green-50 border-green-300 winner-pulse'
+               : isTied  ? 'bg-amber-50 border-amber-200'
+               : 'bg-gray-50 border-gray-100 opacity-50'}">
+      <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0
+        ${isDQ?'bg-red-100 text-red-400':isWin?'bg-green-500 text-white':'bg-gray-200 text-gray-500'}">
+        ${isDQ?'✕':i+1}
+      </span>
+      <div class="flex-1 text-xs font-medium ${isDQ?'text-gray-400 line-through':'text-gray-600'}">
+        ${s.row.customerType} · ${s.row.zone} · ${s.row.serviceResp}
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        ${isDQ ? `<span class="text-xs text-red-400 font-semibold">Disqualified</span>` : `
+        <div class="flex gap-0.5">
+          ${[1,2,3].map(n=>`<div class="w-2.5 h-2.5 rounded-full ${s.score>=n?(isWin?'bg-green-400':'bg-amber-400'):'bg-gray-200'}"></div>`).join('')}
+        </div>
+        <span class="text-xs text-gray-400 font-medium mr-1">${s.score} exact</span>
+        <span class="font-bold text-gray-900">${fmt(s.row.price)}</span>
+        ${isWin?'<span class="text-yellow-400">★</span>':''}`}
+      </div>
+    </div>`}).join('')}
+  </div>
+  <div class="p-4 bg-green-50 border-2 border-green-200 rounded-2xl">
+    <p class="text-xs font-bold text-green-500 uppercase tracking-wide mb-1">Base Price Row Selected</p>
+    <p class="font-bold text-gray-900">${W.row.customerType} · ${W.row.zone} · ${W.row.serviceResp}</p>
+    <p class="text-sm text-gray-600 mt-1">
+      Score: <strong>${W.score}/3</strong> &nbsp;·&nbsp;
+      R/D: <strong>${W.row.rdCode}</strong> &nbsp;·&nbsp;
+      Base: <strong>${fmt(W.row.price)} ${W.row.unit}</strong>
+    </p>
+  </div>
+</div>`;
+
+  // ── STEP 5: Additional Services ──
+  if(step===5){
+    const applicableAll = getApplicableSvcs(evt.productId);
+    return `
+<div class="anim-fade-up space-y-4">
+  <div class="flex items-center gap-2 mb-3">
+    <span class="w-6 h-6 bg-orange-100 rounded-full flex items-center justify-center text-xs font-bold text-orange-600">5</span>
+    <h3 class="font-bold text-gray-800">Additional Services</h3>
+  </div>
+  <p class="text-sm text-gray-500">Services recorded by the driver for this event:</p>
+
+  ${svcs.length===0&&applicableAll.length===0?`
+  <div class="p-4 bg-gray-50 rounded-xl text-center text-sm text-gray-400">No applicable additional services for this product.</div>`:''}
+
+  ${applicableAll.length>0?`
+  <div class="space-y-2">
+    ${applicableAll.map((svc,i)=>{
+      const wasSelected = (selectedSvcIds||[]).includes(svc.id);
+      return `
+    <div class="flex items-start gap-3 p-3.5 rounded-xl border anim-scan d${Math.min(i+1,8)}
+      ${wasSelected&&svc.affectsPrice?'bg-orange-50 border-orange-200':wasSelected?'bg-gray-50 border-gray-200':'bg-gray-50 border-gray-100 opacity-50'}"
+      style="opacity:0;animation-fill-mode:forwards">
+      <div class="mt-0.5 flex-shrink-0">
+        ${wasSelected
+          ?`<div class="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center"><svg class="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg></div>`
+          :`<div class="w-5 h-5 bg-gray-200 rounded-full flex items-center justify-center"><span class="text-gray-400 text-xs">—</span></div>`}
+      </div>
+      <div class="flex-1">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="text-sm font-semibold ${wasSelected?'text-gray-900':'text-gray-400'}">${svc.name}</span>
+          ${svc.automatic?`<span class="text-xs bg-blue-100 text-blue-600 px-1.5 rounded-full font-bold leading-5">Auto</span>`:''}
+          ${!svc.affectsPrice?`<span class="text-xs bg-gray-100 text-gray-400 px-1.5 rounded-full leading-5">No price impact</span>`:''}
+        </div>
+        ${wasSelected&&svc.affectsPrice&&svc.price>0?`
+        <p class="text-sm font-bold text-orange-600 mt-0.5 anim-check" style="opacity:0;animation-fill-mode:forwards;animation-delay:.1s">
+          + ${fmt(svc.price)} ${svc.unit}
+        </p>`:''}
+        ${!wasSelected?`<p class="text-xs text-gray-400 mt-0.5">Not applied</p>`:''}
+      </div>
+    </div>`}).join('')}
+  </div>`:''}
+
+  <!-- running total -->
+  ${affecting.length>0||true?`
+  <div class="bg-gray-900 rounded-2xl p-4 text-white anim-fade-up d4" style="opacity:0;animation-fill-mode:forwards">
+    <p class="text-xs text-gray-400 uppercase tracking-wide mb-3">Price Calculation</p>
+    <div class="space-y-2">
+      <div class="flex items-center justify-between text-sm">
+        <span class="text-gray-300">Base price (${W.row.customerType} · ${W.row.zone})</span>
+        <span class="font-bold text-white">${fmt(W.row.price)}</span>
+      </div>
+      ${affecting.map((s,i)=>`
+      <div class="flex items-center justify-between text-sm anim-count d${Math.min(i+2,8)}" style="opacity:0;animation-fill-mode:forwards">
+        <span class="text-orange-300">+ ${s.name}</span>
+        <span class="font-bold text-orange-300">+${fmt(s.price)}</span>
+      </div>`).join('')}
+      ${nonAffecting.length?`
+      <div class="pt-1 text-xs text-gray-500 flex items-center gap-1">
+        <span>Also recorded (no cost):</span>
+        ${nonAffecting.map(s=>`<span class="text-gray-400">${s.name}</span>`).join(', ')}
+      </div>`:''}
+      <div class="mt-2 pt-2 border-t border-gray-700 flex items-center justify-between">
+        <span class="font-semibold text-gray-200">Total</span>
+        <span class="text-xl font-extrabold text-green-400 anim-count d${Math.min(affecting.length+3,8)}" style="opacity:0;animation-fill-mode:forwards">${fmt(fin.total)}</span>
+      </div>
+    </div>
+  </div>`:''}
+</div>`;
+  }
+
+  // ── STEP 6: Final Result ──
+  if(step===6) return `
+<div class="anim-fade-up text-center space-y-5">
+  <div class="flex items-center gap-2 justify-center">
+    <span class="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center text-xs font-bold text-green-600">6</span>
+    <h3 class="font-bold text-gray-800">Final Result</h3>
+  </div>
+
+  <div class="inline-block px-10 py-7 bg-gradient-to-br from-green-50 to-emerald-100 border-2 border-green-200 rounded-3xl">
+    <p class="text-6xl font-extrabold text-green-700 tracking-tight">${fmt(fin.total)}</p>
+    <p class="text-sm text-green-500 mt-2 font-bold uppercase tracking-wide">${W.row.unit}</p>
+  </div>
+
+  <div class="bg-gray-50 rounded-2xl p-4 text-left space-y-3">
+    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">Price Breakdown</p>
+    <div class="space-y-1.5">
+      <div class="flex justify-between text-sm">
+        <span class="text-gray-600">Base — ${W.row.customerType} + ${W.row.zone} + ${W.row.serviceResp}</span>
+        <span class="font-semibold text-gray-800">${fmt(W.row.price)}</span>
+      </div>
+      ${affecting.map(s=>`
+      <div class="flex justify-between text-sm">
+        <span class="text-orange-600">+ ${s.name}</span>
+        <span class="font-semibold text-orange-600">+${fmt(s.price)}</span>
+      </div>`).join('')}
+      ${nonAffecting.length?`
+      <div class="pt-1 text-xs text-gray-400 italic">
+        Non-billable services recorded: ${nonAffecting.map(s=>s.name).join(', ')}
+      </div>`:''}
+      <div class="flex justify-between font-bold text-base pt-2 border-t border-gray-200 mt-2">
+        <span class="text-gray-800">Final Total</span>
+        <span class="text-green-700">${fmt(fin.total)}</span>
+      </div>
+    </div>
+    <div class="pt-2 border-t border-gray-100 grid grid-cols-3 gap-2">
+      ${[['Customer Type',W.row.customerType],['Zone',W.row.zone],['Service Resp.',W.row.serviceResp]].map(([l,v])=>`
+      <div class="text-center p-2 bg-white rounded-xl border border-gray-100">
+        <p class="text-xs text-gray-400 mb-1">${l}</p>
+        <p class="font-bold text-gray-800 text-xs">${v}</p>
+      </div>`).join('')}
+    </div>
+    <div class="flex items-center justify-between text-xs text-gray-400 pt-1">
+      <span>R/D Code: <strong class="text-gray-600">${W.row.rdCode}</strong></span>
+      <span>Score: <strong class="text-green-600">${W.score} / 3</strong></span>
+    </div>
+  </div>
+</div>`;
+
+  return '';
+}
+
+// ─────────────────────────────────────────────────────────
+// WIRE
+// ─────────────────────────────────────────────────────────
+function wire(){
+  const root = document.getElementById('app');
+
+  // customer switch
+  root.querySelectorAll('[data-switch]').forEach(el=>
+    el.addEventListener('click', ()=>set({ citizenId:el.dataset.switch, cSubmitted:false, cSelectedProd:'' })));
+
+  // open request modal
+  root.querySelector('[data-cta="request"]')?.addEventListener('click', ()=>
+    set({ cModal:true, cSubmitted:false, cSelectedProd:'' }));
+
+  root.querySelectorAll('[data-close="modal"]').forEach(el=>
+    el.addEventListener('click', ()=>set({ cModal:false, cSubmitted:false, cSelectedProd:'' })));
+
+  root.querySelectorAll('[data-prod]').forEach(el=>
+    el.addEventListener('change', e=>{ S.cSelectedProd=e.target.value; render(); }));
+
+  // submit request → seed selectedServiceIds with auto services
+  root.querySelector('[data-submit-req]')?.addEventListener('click', ()=>{
+    if(!S.cSelectedProd) return;
+    const c  = byId(S.customers, S.citizenId);
+    const p  = byId(S.products,  S.cSelectedProd);
+    const autoIds = getAutoSvcIds(p.id);
+    S.events.push({
+      id:            'e'+(++_eid),
+      customerId:    c.id,
+      customerName:  c.name,
+      address:       c.address,
+      productId:     p.id,
+      productName:   p.name,
+      zone:          c.zone,
+      customerType:  c.type,
+      serviceResp:   c.serviceResp,
+      status:        'Pending',
+      basePrice:     null,
+      matchedPrice:  null,
+      matchedUnit:   null,
+      matchedRowLabel: null,
+      selectedServiceIds:  autoIds,
+      confirmedServiceIds: autoIds,  // auto services are pre-confirmed
+      createdAt:     new Date().toISOString(),
+      _flash:        false,
+    });
+    set({ cSubmitted:true });
+  });
+
+  // driver list → detail
+  root.querySelectorAll('[data-dev]').forEach(el=>
+    el.addEventListener('click', ()=>set({ dPage:'detail', dEventId:el.dataset.dev })));
+
+  root.querySelector('[data-dback]')?.addEventListener('click', ()=>
+    set({ dPage:'list', dEventId:null }));
+
+  // start collection
+  root.querySelector('[data-dstart]')?.addEventListener('click', e=>{
+    const id=e.currentTarget.dataset.dstart;
+    S.events=S.events.map(ev=>ev.id===id?{...ev,status:'In Progress'}:ev);
+    set({ dEventId:id });
+  });
+
+  // complete collection → compute base + final price
+  root.querySelector('[data-dcomplete]')?.addEventListener('click', e=>{
+    const id  = e.currentTarget.dataset.dcomplete;
+    const evt = byId(S.events,id);
+    const res = runPD(evt,S.rows);
+    const w   = res.winner;
+    const sels = evt.selectedServiceIds||[];
+    const fin  = calcFinal(w.row.price, sels);
+    S.events = S.events.map(ev=>ev.id===id?{...ev,
+      status:          'Completed',
+      basePrice:       w.row.price,
+      matchedPrice:    fin.total,
+      matchedUnit:     w.row.unit,
+      matchedRowLabel: `${w.row.customerType} + ${w.row.zone} + ${w.row.serviceResp}`,
+      _flash:          true,
+    }:ev);
+    setTimeout(()=>{ S.events=S.events.map(ev=>ev.id===id?{...ev,_flash:false}:ev); render(); },800);
+    set({ dEventId:id, boTab:'events' });
+  });
+
+  // driver additional services — confirmation checkbox
+  root.querySelectorAll('[data-confirm-svc]').forEach(el=>
+    el.addEventListener('change', e=>{
+      const svcId  = el.dataset.confirmSvc;
+      const evtId  = S.dEventId;
+      const evt    = byId(S.events,evtId);
+      const confs  = evt.confirmedServiceIds||[];
+      const sels   = evt.selectedServiceIds||[];
+      const checked = e.target.checked;
+      S.events = S.events.map(ev=>ev.id===evtId?{...ev,
+        confirmedServiceIds: checked ? [...new Set([...confs,svcId])] : confs.filter(x=>x!==svcId),
+        // If unchecking, also deselect
+        selectedServiceIds: checked ? sels : sels.filter(x=>x!==svcId),
+      }:ev);
+      render();
+    }));
+
+  // driver additional services — toggle
+  root.querySelectorAll('[data-toggle-svc]').forEach(el=>
+    el.addEventListener('click', ()=>{
+      if(el.disabled||el.hasAttribute('disabled')) return;
+      const svcId = el.dataset.toggleSvc;
+      const evtId = S.dEventId;
+      const evt   = byId(S.events,evtId);
+      const sels  = evt.selectedServiceIds||[];
+      const hasSel = sels.includes(svcId);
+      S.events = S.events.map(ev=>ev.id===evtId?{...ev,
+        selectedServiceIds: hasSel ? sels.filter(x=>x!==svcId) : [...sels,svcId],
+      }:ev);
+      render();
+    }));
+
+  // BO tabs
+  root.querySelectorAll('[data-botab]').forEach(el=>
+    el.addEventListener('click', ()=>set({ boTab:el.dataset.botab })));
+
+  // edit price row
+  root.querySelectorAll('[data-editrow]').forEach(el=>
+    el.addEventListener('click', ()=>{ S.editRowId=el.dataset.editrow; S.editSvcId=null; render(); }));
+  root.querySelector('[data-cancelrow]')?.addEventListener('click', ()=>{ S.editRowId=null; render(); });
+  root.querySelectorAll('[data-saverow]').forEach(el=>
+    el.addEventListener('click', e=>{
+      const id=e.currentTarget.dataset.saverow;
+      const tr=e.currentTarget.closest('tr');
+      const vals={};
+      tr.querySelectorAll('[data-ef]').forEach(inp=>{
+        vals[inp.dataset.ef]=inp.dataset.ef==='price'?parseFloat(inp.value):inp.value;
+      });
+      S.rows=S.rows.map(r=>r.id===id?{...r,...vals}:r);
+      S.editRowId=null; render();
+    }));
+
+  // edit additional service row
+  root.querySelectorAll('[data-editsvc]').forEach(el=>
+    el.addEventListener('click', ()=>{ S.editSvcId=el.dataset.editsvc; S.editRowId=null; render(); }));
+  root.querySelector('[data-cancelsvc]')?.addEventListener('click', ()=>{ S.editSvcId=null; render(); });
+  root.querySelectorAll('[data-savesvc]').forEach(el=>
+    el.addEventListener('click', e=>{
+      const id=e.currentTarget.dataset.savesvc;
+      const tr=e.currentTarget.closest('tr');
+      const vals={};
+      tr.querySelectorAll('[data-esf]').forEach(inp=>{
+        const f=inp.dataset.esf;
+        if(f==='price')        vals[f]=parseFloat(inp.value)||0;
+        else if(f==='affectsPrice'||f==='automatic') vals[f]=inp.value==='true';
+        else vals[f]=inp.value;
+      });
+      S.additionalServices=S.additionalServices.map(s=>s.id===id?{...s,...vals}:s);
+      S.editSvcId=null; render();
+    }));
+
+  // add row modal
+  root.querySelector('[data-addrow]')?.addEventListener('click', ()=>{
+    S.newRow={ productId:'p1', customerType:'Any', zone:'Any', serviceResp:'Any', rdCode:'Any', price:0, unit:'per ton' };
+    S.addModal=true; render();
+  });
+  root.querySelectorAll('[data-closeadd]').forEach(el=>
+    el.addEventListener('click', ()=>{ S.addModal=false; render(); }));
+  root.querySelectorAll('[data-nf]').forEach(el=>
+    el.addEventListener('input', e=>{ S.newRow[e.target.dataset.nf]=e.target.value; }));
+  root.querySelectorAll('[data-nf]').forEach(el=>
+    el.addEventListener('change', e=>{ S.newRow[e.target.dataset.nf]=e.target.value; }));
+  root.querySelector('[data-confirmaddrow]')?.addEventListener('click', ()=>{
+    const nr=S.newRow;
+    const prod=byId(S.products,nr.productId);
+    S.rows.push({ id:'r'+Date.now(), productId:nr.productId, productName:prod?.name||'',
+      customerType:nr.customerType||'Any', zone:nr.zone||'Any', serviceResp:nr.serviceResp||'Any',
+      rdCode:nr.rdCode||'Any', price:parseFloat(nr.price)||0, unit:nr.unit||'per ton' });
+    S.addModal=false; render();
+  });
+
+  // open price panel
+  root.querySelectorAll('[data-openpanel]').forEach(el=>
+    el.addEventListener('click', ()=>{
+      const evt    = byId(S.events,el.dataset.openpanel);
+      const result = runPD(evt,S.rows);
+      S.panel = { eventId:evt.id, step:1, result, selectedSvcIds:evt.selectedServiceIds||[] };
+      render();
+    }));
+
+  // panel nav
+  root.querySelector('[data-panelnext]')?.addEventListener('click', ()=>{
+    if(S.panel.step<6){ S.panel.step++; render(); }
+  });
+  root.querySelector('[data-panelprev]')?.addEventListener('click', ()=>{
+    if(S.panel.step>1){ S.panel.step--; render(); }
+  });
+  root.querySelectorAll('[data-panelclose]').forEach(el=>
+    el.addEventListener('click', ()=>{ S.panel=null; render(); }));
+}
+
+// ─────────────────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
